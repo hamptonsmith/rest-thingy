@@ -1,0 +1,22 @@
+{
+  "name": "@shieldsbetter/relaxation",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "ava"
+  },
+  "author": "Hampton Smith",
+  "license": "ISC",
+  "devDependencies": {
+    "ava": "^3.15.0"
+  },
+  "ava": {
+    "files": [
+      "./testing/tests/*.js"
+    ]
+  },
+  "dependencies": {
+    "jsonpointer": "^5.0.0"
+  }
+}
