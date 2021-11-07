@@ -68,6 +68,10 @@ module.exports = class Relaxation {
                 .filter(f =>
                         doesSpecify(this.resources[resourceType].fields, f)))];
 
+        const requestedFieldsArrayStructure = arrayDestructure(
+                this.spec[resourceType],
+                requestedFields.map(f => decodeJsonPointer(f)));
+
         if (!pathParts[1]) {
             throw new Error();
         }
@@ -78,6 +82,7 @@ module.exports = class Relaxation {
             request: {
                 method,
                 fields: requestedFields,
+                fieldsArrayStructure: requestedFieldsArrayStructure,
                 resource: [{ type: pathParts[0], id: pathParts[1] }]
             },
             response: {
@@ -101,10 +106,26 @@ module.exports = class Relaxation {
             const clientBody = ctx.response.body;
             ctx.response.body = {};
 
-            for (const requestedField of requestedFields) {
-                jsonpointer.set(ctx.response.body, requestedField,
-                        jsonpointer.get(clientBody, requestedField));
+            function populate(target, src, spec) {
+                for (const [key, value] of Object.entries(spec)) {
+                    if (value === true) {
+                        jsonpointer.set(target, key, jsonpointer.get(src, key));
+                    }
+                    else {
+                        const nextLevel = [];
+                        jsonpointer.set(target, key, nextLevel);
+
+                        for (const el of jsonpointer.get(src, key) || []) {
+                            const finalEl = {};
+                            nextLevel.push(finalEl);
+                            populate(finalEl, el, value)
+                        }
+                    }
+                }
             }
+
+            populate(ctx.response.body, clientBody,
+                    requestedFieldsArrayStructure);
         }
 
         return ctx.response;
@@ -114,6 +135,34 @@ module.exports = class Relaxation {
         this.middleware.push(mw);
     }
 };
+
+function arrayDestructure(spec, fields) {
+    const result = {};
+
+    for (const field of fields) {
+        let target = result;
+        let level = spec;
+
+        let slice = [];
+        for (const component of field) {
+            if (level.array) {
+                target[encodeJsonPointer(slice)] = {};
+                target = target[encodeJsonPointer(slice)];
+                slice = [];
+            }
+
+            slice.push(component);
+
+            level = level.fields[component];
+        }
+
+        if (slice.length > 0) {
+            target[encodeJsonPointer(slice)] = true;
+        }
+    }
+
+    return result;
+}
 
 function doesSpecify(compiledFields, jsonPointer) {
     const specifier = JSON.stringify(jsonPointer.split('/').slice(1)
@@ -184,4 +233,15 @@ function compileFields(
     }
 
     return accum;
+}
+
+function encodeJsonPointer(array) {
+    return '/' + array
+            .map(el => el.replace(/\~/g, '~0').replace(/\//g, '~1'))
+            .join('/');
+}
+
+function decodeJsonPointer(ptr) {
+    return ptr.split('/').slice(1)
+            .map(el => el.replace(/\~1/g, '/').replace(/\~0/g, '~'));
 }
