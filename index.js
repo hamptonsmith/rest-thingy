@@ -72,15 +72,14 @@ module.exports = class Relaxation {
                 this.spec[resourceType],
                 requestedFields.map(f => decodeJsonPointer(f)));
 
-        if (!pathParts[1]) {
-            throw new Error();
-        }
+        const mode = pathParts.length % 2 === 0 ? 'get' : 'list';
 
         requestedFields.sort();
 
         const ctx = {
             request: {
                 method,
+                mode,
                 fields: requestedFields,
                 fieldsArrayStructure: requestedFieldsArrayStructure,
                 resource: [{ type: pathParts[0], id: pathParts[1] }]
@@ -102,27 +101,38 @@ module.exports = class Relaxation {
             await this.middleware[0](ctx, next);
         }
 
-        if (method === 'GET' && ctx.response.status === 200) {
+        switch (mode) {
+            case 'get': {
+                if (ctx.response.status === 200) {
+                    const clientBody = ctx.response.body;
+                    ctx.response.body = {};
+
+                    populate(ctx.response.body, clientBody,
+                            requestedFieldsArrayStructure);
+                }
+
+                break;
+            }
+            case 'list': {
+                if (ctx.response.status === 200) {
+                    ctx.response.body.records = ctx.response.body.records
+                            .map(r => {
+                                const result = {};
+
+                                populate(result, r,
+                                        requestedFieldsArrayStructure);
+
+                                return result;
+                            });
+                }
+
+                break;
+            }
+        }
+
+        if (mode === 'get' && ctx.response.status === 200) {
             const clientBody = ctx.response.body;
             ctx.response.body = {};
-
-            function populate(target, src, spec) {
-                for (const [key, value] of Object.entries(spec)) {
-                    if (value === true) {
-                        jsonpointer.set(target, key, jsonpointer.get(src, key));
-                    }
-                    else {
-                        const nextLevel = [];
-                        jsonpointer.set(target, key, nextLevel);
-
-                        for (const el of jsonpointer.get(src, key) || []) {
-                            const finalEl = {};
-                            nextLevel.push(finalEl);
-                            populate(finalEl, el, value)
-                        }
-                    }
-                }
-            }
 
             populate(ctx.response.body, clientBody,
                     requestedFieldsArrayStructure);
@@ -135,6 +145,24 @@ module.exports = class Relaxation {
         this.middleware.push(mw);
     }
 };
+
+function populate(target, src, spec) {
+    for (const [key, value] of Object.entries(spec)) {
+        if (value === true) {
+            jsonpointer.set(target, key, jsonpointer.get(src, key));
+        }
+        else {
+            const nextLevel = [];
+            jsonpointer.set(target, key, nextLevel);
+
+            for (const el of jsonpointer.get(src, key) || []) {
+                const finalEl = {};
+                nextLevel.push(finalEl);
+                populate(finalEl, el, value)
+            }
+        }
+    }
+}
 
 function arrayDestructure(spec, fields) {
     const result = {};

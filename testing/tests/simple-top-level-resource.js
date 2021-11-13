@@ -1,6 +1,7 @@
 'use strict';
 
 const jsonpointer = require('jsonpointer');
+const lodash = require('lodash');
 const Relaxation = require('../../index');
 const test = require('ava');
 
@@ -22,15 +23,60 @@ const relax = new Relaxation({
 });
 
 relax.use((ctx, next) => {
-    ctx.response.status = 200;
-    ctx.response.body = {};
+    switch (ctx.request.mode) {
+        case 'get': {
+            ctx.response.status = 200;
+            ctx.response.body = {};
 
-    for (const requestedField of ctx.request.fields) {
-        jsonpointer.set(ctx.response.body, requestedField, requestedField);
+            for (const requestedField of ctx.request.fields) {
+                jsonpointer.set(ctx.response.body, requestedField, requestedField);
+            }
+
+            ctx.response.body.id = ctx.request.resource[0].id;
+            ctx.response.body.extra = 'something extra';
+
+            break;
+        }
+        case 'list': {
+            ctx.response.status = 200;
+
+            const limit = Number.parseInt(
+                    lodash.get(ctx, 'request.query.limit', '3'));
+
+            let start;
+            if (lodash.get(ctx, 'request.query.before')) {
+                const before = Number.paseInt(
+                        lodash.get(ctx, 'request.query.before'));
+                start = before - limit;
+            }
+            else {
+                const after = Number.parseInt(
+                        lodash.get(ctx, 'request.query.after', '-1'));
+                start = after + 1;
+            }
+
+            ctx.response.body = {
+                records: [],
+                previous: `${start}`,
+                next: `${start + limit - 1}`
+            };
+
+            for (let i = start; i < start + limit; i++) {
+                const r = {};
+                ctx.response.body.records.push(r);
+
+
+                for (const requestedField of ctx.request.fields) {
+                    jsonpointer.set(r, requestedField, requestedField);
+                }
+
+                r.id = `w${i}`;
+                r.extra = 'something extra';
+            }
+
+            break;
+        }
     }
-
-    ctx.response.body.id = ctx.request.resource[0].id;
-    ctx.response.body.extra = 'something extra';
 });
 
 test('GET top level resource, default fields', async t => {
@@ -46,6 +92,39 @@ test('GET top level resource, default fields', async t => {
             }
         }
     );
+});
+
+test('GET resource list, first page, default fields', async t => {
+    t.deepEqual(
+        await relax.process({ method: 'GET', path: '/widgets' }),
+        {
+            status: 200,
+            body: {
+                records: [
+                    {
+                        bar: '/bar',
+                        bazz: { plugh: '/bazz/plugh' },
+                        id: 'w0',
+                        silly: '/silly'
+                    },
+                    {
+                        bar: '/bar',
+                        bazz: { plugh: '/bazz/plugh' },
+                        id: 'w1',
+                        silly: '/silly'
+                    },
+                    {
+                        bar: '/bar',
+                        bazz: { plugh: '/bazz/plugh' },
+                        id: 'w2',
+                        silly: '/silly'
+                    }
+                ],
+                next: '2',
+                previous: '0'
+            }
+        }
+    )
 });
 
 test('GET top level resource, no fields', async t => {
