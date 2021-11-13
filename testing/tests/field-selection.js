@@ -4,9 +4,7 @@ const jsonpointer = require('jsonpointer');
 const Relaxation = require('../../index');
 const test = require('ava');
 
-function echoMiddleware(ctx, next) {
-    ctx.response.status = 200;
-
+async function echoMiddleware(request) {
     function fillArrayLevel(target, request) {
         for (const [key, value] of Object.entries(request)) {
             if (value === true) {
@@ -22,8 +20,13 @@ function echoMiddleware(ctx, next) {
         target.extra = 'something extra';
     }
 
-    ctx.response.body = {};
-    fillArrayLevel(ctx.response.body, ctx.request.fieldsArrayStructure);
+    const response = {
+        resource: {}
+    };
+
+    fillArrayLevel(response.resource, request.fieldsArrayStructure);
+
+    return response;
 }
 
 test('GET top level resource, default fields', async t => {
@@ -48,14 +51,17 @@ test('GET top level resource, default fields', async t => {
                 }
             }
         }
+    }, {
+        widgets: {
+            byId: echoMiddleware
+        }
     });
-
-    relax.use(echoMiddleware);
 
     t.deepEqual(
         await relax.process({ method: 'GET', path: '/widgets/w1' }),
         {
             status: 200,
+            headers: {},
             body: {
                 bar: {
                     bazz: [

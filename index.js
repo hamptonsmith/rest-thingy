@@ -7,8 +7,9 @@ const { URLSearchParams } = require('url');
 module.exports = class Relaxation {
     middleware = [];
 
-    constructor(spec) {
+    constructor(spec, drivers) {
         this.spec = spec;
+        this.drivers = drivers;
 
         this.resources = {};
         for (const [key, resourceSpec] of Object.entries(spec)) {
@@ -31,6 +32,7 @@ module.exports = class Relaxation {
 
         const resourceType = pathParts[0];
         const resourceSpec = this.spec[resourceType];
+        const resourceDriver = this.drivers[resourceType];
 
         const query = parseQueryString(queryString);
 
@@ -103,39 +105,64 @@ module.exports = class Relaxation {
 
         switch (mode) {
             case 'get': {
-                if (ctx.response.status === 200) {
-                    const clientBody = ctx.response.body;
-                    ctx.response.body = {};
-
-                    populate(ctx.response.body, clientBody,
-                            requestedFieldsArrayStructure);
+                const clientResponse = await resourceDriver.byId(ctx.request);
+                if (clientResponse.status === undefined) {
+                    clientResponse.status = 200;
                 }
+
+                if (!`${clientResponse.status}`.startsWith('2')) {
+                    const e = new Error('Did not return a 2xx status.');
+                    e.response = clientResponse;
+                    throw e;
+                }
+
+                const frameworkResponse = {
+                    body: {},
+                    headers: clientResponse.headers || {},
+                    status: clientResponse.status
+                };
+
+                populate(frameworkResponse.body, clientResponse.resource,
+                        requestedFieldsArrayStructure);
+
+                ctx.response = frameworkResponse;
 
                 break;
             }
             case 'list': {
-                if (ctx.response.status === 200) {
-                    ctx.response.body.records = ctx.response.body.records
-                            .map(r => {
-                                const result = {};
-
-                                populate(result, r,
-                                        requestedFieldsArrayStructure);
-
-                                return result;
-                            });
+                const clientResponse = await resourceDriver.list(ctx.request);
+                if (clientResponse.status === undefined) {
+                    clientResponse.status = 200;
                 }
+
+                if (!`${clientResponse.status}`.startsWith('2')) {
+                    const e = new Error('Did not return a 2xx status.');
+                    e.response = clientResponse;
+                    throw e;
+                }
+
+                const frameworkResponse = {
+                    body: {
+                        next: clientResponse.next,
+                        previous: clientResponse.previous
+                    },
+                    headers: clientResponse.headers || {},
+                    status: clientResponse.status
+                };
+
+                frameworkResponse.body.resources = clientResponse.resources
+                        .map(r => {
+                            const result = {};
+
+                            populate(result, r, requestedFieldsArrayStructure);
+
+                            return result;
+                        });
+
+                ctx.response = frameworkResponse;
 
                 break;
             }
-        }
-
-        if (mode === 'get' && ctx.response.status === 200) {
-            const clientBody = ctx.response.body;
-            ctx.response.body = {};
-
-            populate(ctx.response.body, clientBody,
-                    requestedFieldsArrayStructure);
         }
 
         return ctx.response;

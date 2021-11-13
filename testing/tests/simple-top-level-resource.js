@@ -20,53 +20,49 @@ const relax = new Relaxation({
             silly: { inclusion: 'always' }
         }
     }
-});
+}, {
+    widgets: {
+        byId: async request => {
+            const response = { resource: {} };
 
-relax.use((ctx, next) => {
-    switch (ctx.request.mode) {
-        case 'get': {
-            ctx.response.status = 200;
-            ctx.response.body = {};
-
-            for (const requestedField of ctx.request.fields) {
-                jsonpointer.set(ctx.response.body, requestedField, requestedField);
+            for (const requestedField of request.fields) {
+                jsonpointer.set(
+                    response.resource, requestedField, requestedField);
             }
 
-            ctx.response.body.id = ctx.request.resource[0].id;
-            ctx.response.body.extra = 'something extra';
+            response.resource.id = request.resource[0].id;
+            response.resource.extra = 'something extra';
 
-            break;
-        }
-        case 'list': {
-            ctx.response.status = 200;
-
-            const limit = Number.parseInt(
-                    lodash.get(ctx, 'request.query.limit', '3'));
+            return response;
+        },
+        list: async request => {
+            const limit =
+                    Number.parseInt(lodash.get(request, 'query.limit', '3'));
 
             let start;
-            if (lodash.get(ctx, 'request.query.before')) {
-                const before = Number.paseInt(
-                        lodash.get(ctx, 'request.query.before'));
+            if (lodash.get(request, 'query.before')) {
+                const before =
+                        Number.paseInt(lodash.get(request, 'query.before'));
                 start = before - limit;
             }
             else {
                 const after = Number.parseInt(
-                        lodash.get(ctx, 'request.query.after', '-1'));
+                        lodash.get(request, 'query.after', '-1'));
                 start = after + 1;
             }
 
-            ctx.response.body = {
-                records: [],
+            const response = {
+                next: `${start + limit - 1}`,
                 previous: `${start}`,
-                next: `${start + limit - 1}`
+                resources: []
             };
 
             for (let i = start; i < start + limit; i++) {
                 const r = {};
-                ctx.response.body.records.push(r);
+                response.resources.push(r);
 
 
-                for (const requestedField of ctx.request.fields) {
+                for (const requestedField of request.fields) {
                     jsonpointer.set(r, requestedField, requestedField);
                 }
 
@@ -74,7 +70,7 @@ relax.use((ctx, next) => {
                 r.extra = 'something extra';
             }
 
-            break;
+            return response;
         }
     }
 });
@@ -84,6 +80,7 @@ test('GET top level resource, default fields', async t => {
         await relax.process({ method: 'GET', path: '/widgets/w1' }),
         {
             status: 200,
+            headers: {},
             body: {
                 bar: '/bar',
                 bazz: { plugh: '/bazz/plugh' },
@@ -99,8 +96,9 @@ test('GET resource list, first page, default fields', async t => {
         await relax.process({ method: 'GET', path: '/widgets' }),
         {
             status: 200,
+            headers: {},
             body: {
-                records: [
+                resources: [
                     {
                         bar: '/bar',
                         bazz: { plugh: '/bazz/plugh' },
@@ -136,6 +134,7 @@ test('GET top level resource, no fields', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 id: 'w1',
                 silly: '/silly'
@@ -153,6 +152,7 @@ test('GET top level resource, single explicit field', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 foo: '/foo',
                 id: 'w1',
@@ -171,6 +171,7 @@ test('GET top level resource, single nested field, dot syntax', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bazz: { plugh: '/bazz/plugh' },
                 id: 'w1',
@@ -190,6 +191,7 @@ test('GET top level resource, single nested field, JSON syntax', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bazz: { plugh: '/bazz/plugh' },
                 id: 'w1',
@@ -211,6 +213,7 @@ test('GET top level resource, multi-field, single query entry', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bar: '/bar',
                 bazz: {
@@ -237,6 +240,7 @@ test('GET top level resource, multi-field, multiple query entries', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bar: '/bar',
                 bazz: {
@@ -262,6 +266,7 @@ test('GET top level resource, multi-field is alphabetized', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bar: '/bar',
                 bazz: {
@@ -285,6 +290,7 @@ test('GET top level resource, unknown field not propagated', async t => {
         }),
         {
             status: 200,
+            headers: {},
             body: {
                 bazz: { plugh: '/bazz/plugh' },
                 foo: '/foo',
