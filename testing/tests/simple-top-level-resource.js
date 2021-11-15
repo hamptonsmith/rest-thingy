@@ -1,5 +1,6 @@
 'use strict';
 
+const echo = require('../utils/echo-response');
 const jsonpointer = require('jsonpointer');
 const lodash = require('lodash');
 const Relaxation = require('../../index');
@@ -21,58 +22,7 @@ const relax = new Relaxation({
         }
     }
 }, {
-    widgets: {
-        byId: async request => {
-            const response = { resource: {} };
-
-            for (const requestedField of request.fields) {
-                jsonpointer.set(
-                    response.resource, requestedField, requestedField);
-            }
-
-            response.resource.id = request.resource[0].id;
-            response.resource.extra = 'something extra';
-
-            return response;
-        },
-        list: async request => {
-            const limit =
-                    Number.parseInt(lodash.get(request, 'query.limit', '3'));
-
-            let start;
-            if (lodash.get(request, 'query.before')) {
-                const before =
-                        Number.paseInt(lodash.get(request, 'query.before'));
-                start = before - limit;
-            }
-            else {
-                const after = Number.parseInt(
-                        lodash.get(request, 'query.after', '-1'));
-                start = after + 1;
-            }
-
-            const response = {
-                next: `${start + limit - 1}`,
-                previous: `${start}`,
-                resources: []
-            };
-
-            for (let i = start; i < start + limit; i++) {
-                const r = {};
-                response.resources.push(r);
-
-
-                for (const requestedField of request.fields) {
-                    jsonpointer.set(r, requestedField, requestedField);
-                }
-
-                r.id = `w${i}`;
-                r.extra = 'something extra';
-            }
-
-            return response;
-        }
-    }
+    widgets: echo
 });
 
 test('GET top level resource, default fields', async t => {
@@ -89,40 +39,6 @@ test('GET top level resource, default fields', async t => {
             }
         }
     );
-});
-
-test('GET resource list, first page, default fields', async t => {
-    t.deepEqual(
-        await relax.process({ method: 'GET', path: '/widgets' }),
-        {
-            status: 200,
-            headers: {},
-            body: {
-                resources: [
-                    {
-                        bar: '/bar',
-                        bazz: { plugh: '/bazz/plugh' },
-                        id: 'w0',
-                        silly: '/silly'
-                    },
-                    {
-                        bar: '/bar',
-                        bazz: { plugh: '/bazz/plugh' },
-                        id: 'w1',
-                        silly: '/silly'
-                    },
-                    {
-                        bar: '/bar',
-                        bazz: { plugh: '/bazz/plugh' },
-                        id: 'w2',
-                        silly: '/silly'
-                    }
-                ],
-                next: '2',
-                previous: '0'
-            }
-        }
-    )
 });
 
 test('GET top level resource, no fields', async t => {

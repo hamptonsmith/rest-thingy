@@ -4,7 +4,7 @@ const jsonpointer = require('jsonpointer');
 const Relaxation = require('../../index');
 const test = require('ava');
 
-async function echoMiddleware(request) {
+async function echoMiddleware(ids, request) {
     function fillArrayLevel(target, request) {
         for (const [key, value] of Object.entries(request)) {
             if (value === true) {

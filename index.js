@@ -78,16 +78,16 @@ module.exports = class Relaxation {
 
         requestedFields.sort();
 
+        delete query.f;
+
         const ctx = {
             request: {
-                method,
-                mode,
                 fields: requestedFields,
                 fieldsArrayStructure: requestedFieldsArrayStructure,
+                method,
+                mode,
+                query,
                 resource: [{ type: pathParts[0], id: pathParts[1] }]
-            },
-            response: {
-                status: 404
             }
         };
 
@@ -105,7 +105,8 @@ module.exports = class Relaxation {
 
         switch (mode) {
             case 'get': {
-                const clientResponse = await resourceDriver.byId(ctx.request);
+                const clientResponse = await resourceDriver.byId(
+                        ctx.request.resource, ctx.request);
                 if (clientResponse.status === undefined) {
                     clientResponse.status = 200;
                 }
@@ -130,7 +131,28 @@ module.exports = class Relaxation {
                 break;
             }
             case 'list': {
-                const clientResponse = await resourceDriver.list(ctx.request);
+                const after = firstAsInt(query.after);
+                delete query.after;
+
+                const before = firstAsInt(query.before);
+                delete query.before;
+
+                const limit = firstAsInt(query.limit);
+                delete query.limit;
+
+                const [orderName, orderDirection = 'asc'] = query.order || [];
+                delete query.order;
+
+                const clientResponse = await resourceDriver.list(
+                        orderName,
+                        orderDirection === 'asc' ? 1
+                                : orderDirection === 'desc' ? -1
+                                : undefined,
+                        after,
+                        before,
+                        limit,
+                        ctx.request);
+
                 if (clientResponse.status === undefined) {
                     clientResponse.status = 200;
                 }
@@ -172,6 +194,16 @@ module.exports = class Relaxation {
         this.middleware.push(mw);
     }
 };
+
+function firstAsInt(arr = []) {
+    return arr.length > 0 ?
+            Number.parseInt(arr[0])
+            : undefined;
+}
+
+function peekLast(arr) {
+    return arr[arr.length - 1];
+}
 
 function populate(target, src, spec) {
     for (const [key, value] of Object.entries(spec)) {
