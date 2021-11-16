@@ -11,12 +11,7 @@ module.exports = class Relaxation {
         this.spec = spec;
         this.drivers = drivers;
 
-        this.resources = {};
-        for (const [key, resourceSpec] of Object.entries(spec)) {
-            this.resources[key] = {
-                fields: compileFields(resourceSpec.fields || {})
-            }
-        }
+        this.resources = compileResourcesSpec(spec);
     }
 
     async process({ method, path, queryString = '' }) {
@@ -29,9 +24,16 @@ module.exports = class Relaxation {
         }
 
         const pathParts = path.split('/').slice(1);
+        const parentLinkIds = [];
+        while (pathParts.length > 2) {
+            parentLinkIds.push({ type: pathParts[0], id: pathParts[1] });
+            pathParts.shift();
+            pathParts.shift();
+        }
 
-        const resourceType = pathParts[0];
-        const resourceSpec = this.spec[resourceType];
+        const resourceType = pathParts.shift();
+        const resourceId = pathParts.shift();   // Could be undefined
+        const resourceSpec = getSubspec(this.spec, parentLinkIds, resourceType);
         const resourceDriver = this.drivers[resourceType];
 
         const query = parseQueryString(queryString);
@@ -71,10 +73,10 @@ module.exports = class Relaxation {
                         doesSpecify(this.resources[resourceType].fields, f)))];
 
         const requestedFieldsArrayStructure = arrayDestructure(
-                this.spec[resourceType],
+                resourceSpec,
                 requestedFields.map(f => decodeJsonPointer(f)));
 
-        const mode = pathParts.length % 2 === 0 ? 'get' : 'list';
+        const mode = resourceId === undefined ? 'list' : 'get';
 
         requestedFields.sort();
 
@@ -87,7 +89,10 @@ module.exports = class Relaxation {
                 method,
                 mode,
                 query,
-                resource: [{ type: pathParts[0], id: pathParts[1] }]
+                resource: [
+                    ...parentLinkIds,
+                    { type: resourceType, id: resourceId }
+                ]
             }
         };
 
@@ -251,6 +256,16 @@ function arrayDestructure(spec, fields) {
     return result;
 }
 
+function getSubspec(spec, parentLinks, resourceType) {
+    let level = spec;
+
+    for (const { type } of parentLinks) {
+        level = level[type].resources;
+    }
+
+    return level[resourceType];
+}
+
 function doesSpecify(compiledFields, jsonPointer) {
     const specifier = JSON.stringify(jsonPointer.split('/').slice(1)
             .map(c => c.replace(/\~1/g, '/').replace(/\~0/g, '~')));
@@ -294,8 +309,28 @@ function parseQueryString(qs) {
     return query;
 }
 
+function compileResourcesSpec(
+        resourcesSpec, rootSpec = resourcesSpec, accum = {}) {
+    for (const [linkName, resourceSpec] of Object.entries(resourcesSpec)) {
+        if (!resourceSpec.$ref) {
+            const resourceId = resourceSpec.id || linkName;
+            if (accum[resourceId]) {
+                throw new Error('Duplicate resource type id: ' + resourceId);
+            }
+
+            accum[resourceId] = {
+                fields: compileFields(resourceSpec.fields)
+            };
+
+            compileResourcesSpec(resourceSpec.resources || {}, rootSpec, accum);
+        }
+    }
+
+    return accum;
+}
+
 function compileFields(
-    fieldsSpec,
+    fieldsSpec = {},
     accum = { always: new Set(), default: new Set(), byRequest: new Set() },
     path = [])
 {

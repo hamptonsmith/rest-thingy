@@ -12,7 +12,11 @@ module.exports = {
                 response.resource, requestedField, requestedField);
         }
 
-        response.resource.id = ids[0].id;
+        for (const { type, id } of ids.slice(0, -1)) {
+            response.resource[`${type}Id`] = id;
+        }
+
+        response.resource.id = ids[ids.length - 1].id;
         response.resource.extra = 'something extra';
 
         return response;
